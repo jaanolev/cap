@@ -1,19 +1,33 @@
 import express from 'express';
 import { createSandboxProject, verifyApiKey, consume, whyDenied } from '../db/operations.js';
+import { LLMS_TXT, SKILL_MD } from '../docs/content.js';
 
 const app = express();
 app.use(express.json());
 
 app.get('/', (req, res) => {
   res.json({
-    name: 'Cap API',
-    docs: '/llms.txt',
-    health: '/health'
+    name: 'Cap',
+    docs: 'https://cap-alpha-one.vercel.app/llms.txt',
+    skill: 'https://cap-alpha-one.vercel.app/SKILL.md',
+    health: 'https://cap-alpha-one.vercel.app/health'
   });
 });
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+app.get('/llms.txt', (req, res) => {
+  res.type('text/plain; charset=utf-8').send(LLMS_TXT);
+});
+
+app.get('/SKILL.md', (req, res) => {
+  res.type('text/markdown; charset=utf-8').send(SKILL_MD);
+});
+
+app.get('/.well-known/llms.txt', (req, res) => {
+  res.type('text/plain; charset=utf-8').send(LLMS_TXT);
 });
 
 app.post('/v1/mint_sandbox_key', async (req, res) => {

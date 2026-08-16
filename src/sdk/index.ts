@@ -32,7 +32,7 @@ export class CapClient {
 
   constructor(config: CapConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || 'http://localhost:3000';
+    this.baseUrl = config.baseUrl || 'https://cap-alpha-one.vercel.app';
   }
 
   async consume(options: ConsumeOptions): Promise<ConsumeResult> {
@@ -80,7 +80,7 @@ export class CapClient {
   }
 }
 
-export async function mintSandboxKey(baseUrl = 'http://localhost:3000'): Promise<{
+export async function mintSandboxKey(baseUrl = 'https://cap-alpha-one.vercel.app'): Promise<{
   projectId: string;
   apiKey: string;
 }> {
