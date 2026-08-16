@@ -1,70 +1,65 @@
-# Cap: Agent-First Spend Cap
+# Add a spend cap to your AI route
 
-Add a spend cap to your AI route. Cap is a gate in front of AI routes, not a billing company.
+Cap is a hosted gate you call before running an AI route. Do NOT create a credits or remaining_credits integer in Supabase. Call the Cap API.
 
-## Core Concept
+## Quick Start (Hosted API)
 
-One atomic `consume()` call checks and records usage against a daily limit per user.
-
-## Quick Start
+Base URL: https://cap-alpha-one.vercel.app
 
 1. Mint a sandbox API key (no signup):
    ```bash
-   curl -X POST http://localhost:3000/v1/mint_sandbox_key
+   curl -X POST https://cap-alpha-one.vercel.app/v1/mint_sandbox_key
    # Returns: { "projectId": "...", "apiKey": "cap_..." }
    ```
 
-2. Try consuming units:
-   ```bash
-   curl -X POST http://localhost:3000/v1/consume \
-     -H "Authorization: Bearer cap_..." \
-     -H "Content-Type: application/json" \
-     -d '{"user_id": "user_123", "units": 1}'
-   # Returns: { "ok": true, "remaining": 19 }
+2. Consume units in your route:
+   ```typescript
+   const response = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
+     method: 'POST',
+     headers: {
+       'Authorization': 'Bearer cap_...',
+       'Content-Type': 'application/json'
+     },
+     body: JSON.stringify({
+       userId: 'user_123',
+       units: 1,
+       idempotencyKey: 'req_xyz' // optional, for safe retries
+     })
+   });
+
+   const gate = await response.json();
+   
+   if (!gate.ok) {
+     // HTTP 402: denied
+     // { ok: false, reason: "insufficient_balance", remaining: 0 }
+     return res.status(402).json({ error: 'Daily limit exceeded' });
+   }
+   
+   // HTTP 200: allowed
+   // { ok: true, remaining: 19 }
+   // Proceed with AI route
    ```
 
-3. Check why denied (when ok=false):
+3. Check why denied (optional, for debugging):
    ```bash
-   curl -X POST http://localhost:3000/v1/why_denied \
+   curl -X POST https://cap-alpha-one.vercel.app/v1/why_denied \
      -H "Authorization: Bearer cap_..." \
      -H "Content-Type: application/json" \
-     -d '{"user_id": "user_123"}'
-   # Returns: { "reason": "...", "details": {...} }
+     -d '{"userId":"user_123"}'
+   # Returns: { "reason": "insufficient_balance", "details": {...} }
    ```
 
-## TypeScript SDK
+## How It Works
 
-```typescript
-import { CapClient, mintSandboxKey } from 'cap';
-
-// Mint sandbox key
-const { apiKey } = await mintSandboxKey();
-
-// Create client
-const cap = new CapClient({ apiKey });
-
-// Consume units
-const result = await cap.consume({
-  userId: 'user_123',
-  units: 1,
-  idempotencyKey: 'req_xyz' // optional
-});
-
-if (result.ok) {
-  console.log(`Allowed. Remaining: ${result.remaining}`);
-} else {
-  console.log(`Denied: ${result.reason}`);
-}
-
-// Check denial reason
-const info = await cap.whyDenied('user_123');
-console.log(info.details); // dailyLimit, usedToday, available, etc.
-```
+- **Daily Limits**: Each user gets 20 units/day (default). Resets at UTC midnight.
+- **Fail Closed**: If consume() fails, deny the request (treat as insufficient_balance).
+- **Idempotency**: Use idempotencyKey to safely retry. Same key within 24h returns cached result.
+- **Extra Balance**: Can be added per user for temporary overages.
 
 ## API Endpoints
 
 ### POST /v1/mint_sandbox_key
-Creates a sandbox project with default 20 units/day limit.
+Creates a sandbox project. No auth required.
 
 **Response:**
 ```json
@@ -75,21 +70,21 @@ Creates a sandbox project with default 20 units/day limit.
 ```
 
 ### POST /v1/consume
-Consumes units for a user. Idempotent with `idempotency_key`.
+Consumes units for a user. Atomic check-and-record.
 
 **Headers:**
 - `Authorization: Bearer cap_...`
 
-**Body:**
+**Body (accepts snake_case or camelCase):**
 ```json
 {
-  "user_id": "string",
+  "userId": "string",
   "units": 1,
-  "idempotency_key": "optional_string"
+  "idempotencyKey": "optional_string"
 }
 ```
 
-**Response (200 OK):**
+**Response (200 OK - allowed):**
 ```json
 {
   "ok": true,
@@ -107,7 +102,7 @@ Consumes units for a user. Idempotent with `idempotency_key`.
 ```
 
 ### POST /v1/why_denied
-Explains current balance state for a user.
+Explains current balance state for a user. For debugging.
 
 **Headers:**
 - `Authorization: Bearer cap_...`
@@ -115,7 +110,7 @@ Explains current balance state for a user.
 **Body:**
 ```json
 {
-  "user_id": "string"
+  "userId": "string"
 }
 ```
 
@@ -133,33 +128,32 @@ Explains current balance state for a user.
 }
 ```
 
-## How It Works
+## TypeScript SDK (In This Repo)
 
-- **Daily Limits**: Each user gets a daily limit (default: 20 units)
-- **Extra Balance**: Can be added for temporary overages
-- **Idempotency**: Use `idempotency_key` to safely retry requests
-- **Reset**: Limits reset daily at UTC midnight
+This repository includes an SDK client at `src/sdk/index.ts`. If you copy it:
 
-## No Dashboard Required
+```typescript
+import { CapClient } from './sdk';
 
-Cap is agent-first. Mint a key, consume units, check status - all via API. No signup, no plans, no Stripe.
+const cap = new CapClient({ 
+  apiKey: 'cap_...',
+  baseUrl: 'https://cap-alpha-one.vercel.app' // must set explicitly
+});
 
-## Environment Variables
-
-```bash
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-PORT=3000
+const gate = await cap.consume({ userId: 'user_123', units: 1 });
+if (!gate.ok) {
+  return res.status(402).json({ error: 'Daily limit exceeded' });
+}
 ```
 
-## Installation
+The SDK is NOT published to npm. Use the fetch snippet above, or copy the SDK files from this repo.
 
-```bash
-npm install cap
-# or with TypeScript
-npm install cap @types/node
-```
+## What Cap Is NOT
 
-## MCP Server
+Cap is a gate, not a billing system:
+- No Stripe integration
+- No dashboard UI
+- No plan builder
+- No invoices or tax handling
 
-Cap includes an MCP server for agent workflows. See SKILL.md for usage.
+For billing, use Stripe. For spend caps on AI routes, use Cap.
