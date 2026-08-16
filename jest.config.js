@@ -14,4 +14,5 @@ export default {
     ],
   },
   testMatch: ['**/*.test.ts'],
+  setupFiles: ['<rootDir>/jest.setup.js'],
 };
