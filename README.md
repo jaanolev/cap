@@ -27,6 +27,34 @@ npm start
 npm run mcp
 ```
 
+## Deploying to Vercel
+
+Deploy the Cap API to a public URL in a few clicks:
+
+1. **Connect Repository**: Go to [vercel.com](https://vercel.com), click "Add New Project", and import the `jaanolev/cap` GitHub repository.
+
+2. **Configure Environment Variables**:
+   - `SUPABASE_URL`: `https://iywsldhgmcyawpoxfhdn.supabase.co`
+   - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key (required)
+
+3. **Deploy**: Click "Deploy" and wait for the build to complete.
+
+4. **Test**: Your API will be available at `https://your-project.vercel.app` with these endpoints:
+   - `POST /v1/mint_sandbox_key` - Create a new sandbox API key
+   - `POST /v1/consume` - Consume units for a user
+   - `POST /v1/why_denied` - Check why a user was denied
+
+Example usage with deployed API:
+```bash
+# Mint a sandbox key
+curl -X POST https://your-project.vercel.app/v1/mint_sandbox_key
+
+# Consume units
+curl -X POST https://your-project.vercel.app/v1/consume \
+  -H "Authorization: Bearer cap_..." \
+  -d '{"user_id":"user_123","units":1}'
+```
+
 ## Usage
 
 See [llms.txt](./llms.txt) for complete API documentation.
