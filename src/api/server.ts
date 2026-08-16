@@ -1,6 +1,13 @@
 import express from 'express';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { createSandboxProject, verifyApiKey, consume, whyDenied } from '../db/operations.js';
 import { LLMS_TXT, LLMS_FULL_TXT, SKILL_MD } from '../docs/content.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = join(__dirname, '..', '..');
 
 const app = express();
 app.use(express.json());
@@ -242,6 +249,18 @@ app.get('/.well-known/agent-card.json', (req, res) => {
       config_url: 'https://cap-alpha-one.vercel.app/mcp.json'
     }
   });
+});
+
+app.get('/mcp.json', (req, res) => {
+  try {
+    const mcpJsonPath = join(repoRoot, 'mcp.json');
+    const mcpJson = readFileSync(mcpJsonPath, 'utf-8');
+    const mcpData = JSON.parse(mcpJson);
+    res.json(mcpData);
+  } catch (error) {
+    console.error('Error reading mcp.json:', error);
+    res.status(500).json({ error: 'Failed to load MCP configuration' });
+  }
 });
 
 app.post('/v1/mint_sandbox_key', async (req, res) => {

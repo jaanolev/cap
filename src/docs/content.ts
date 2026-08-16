@@ -323,7 +323,7 @@ app.post('/api/ai/chat', async (req, res) => {
   const capResponse = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
     method: 'POST',
     headers: {
-      'Authorization': \\\`Bearer \\\${process.env.CAP_API_KEY}\\\`,
+      'Authorization': \`Bearer \${process.env.CAP_API_KEY}\`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ 
@@ -362,7 +362,7 @@ export default async function handler(req, res) {
   const capGate = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
     method: 'POST',
     headers: {
-      'Authorization': \\\`Bearer \\\${process.env.CAP_API_KEY}\\\`,
+      'Authorization': \`Bearer \${process.env.CAP_API_KEY}\`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ userId, units: 1 })
@@ -393,7 +393,7 @@ try {
   const capResponse = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
     method: 'POST',
     headers: {
-      'Authorization': \\\`Bearer \\\${apiKey}\\\`,
+      'Authorization': \`Bearer \${apiKey}\`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ userId, units: 1 })
@@ -408,7 +408,7 @@ try {
         remaining: gate.remaining 
       });
     }
-    throw new Error(\\\`Cap API error: \\\${capResponse.status}\\\`);
+    throw new Error(\`Cap API error: \${capResponse.status}\`);
   }
   
   const gate = await capResponse.json();
@@ -440,14 +440,6 @@ Cap is designed as a stateless gate:
 - UTC-based daily resets
 - Idempotency via request deduplication
 - No user authentication (uses project API keys)
-
-## Rate Limiting
-
-The Cap API itself has rate limits:
-- 100 requests/second per API key
-- 1000 requests/minute per API key
-
-These limits are designed to handle production traffic while preventing abuse.
 
 ## Support
 
