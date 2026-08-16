@@ -4,6 +4,14 @@ import { createSandboxProject, verifyApiKey, consume, whyDenied } from '../db/op
 const app = express();
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Cap API',
+    docs: '/llms.txt',
+    health: '/health'
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -32,13 +40,15 @@ app.post('/v1/consume', async (req, res) => {
       return res.status(401).json({ error: 'Invalid API key' });
     }
     
-    const { user_id, units = 1, idempotency_key } = req.body;
+    const userId = req.body.user_id || req.body.userId;
+    const units = req.body.units || 1;
+    const idempotencyKey = req.body.idempotency_key || req.body.idempotencyKey;
     
-    if (!user_id) {
+    if (!userId) {
       return res.status(400).json({ error: 'user_id is required' });
     }
     
-    const result = await consume(project.id, user_id, units, idempotency_key);
+    const result = await consume(project.id, userId, units, idempotencyKey);
     
     if (!result.ok) {
       return res.status(402).json(result);
@@ -47,7 +57,10 @@ app.post('/v1/consume', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error consuming:', error);
-    res.status(500).json({ error: 'Failed to consume' });
+    res.status(500).json({ 
+      error: 'Failed to consume',
+      message: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
@@ -65,17 +78,20 @@ app.post('/v1/why_denied', async (req, res) => {
       return res.status(401).json({ error: 'Invalid API key' });
     }
     
-    const { user_id } = req.body;
+    const userId = req.body.user_id || req.body.userId;
     
-    if (!user_id) {
+    if (!userId) {
       return res.status(400).json({ error: 'user_id is required' });
     }
     
-    const result = await whyDenied(project.id, user_id);
+    const result = await whyDenied(project.id, userId);
     res.json(result);
   } catch (error) {
     console.error('Error getting denial reason:', error);
-    res.status(500).json({ error: 'Failed to get denial reason' });
+    res.status(500).json({ 
+      error: 'Failed to get denial reason',
+      message: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 

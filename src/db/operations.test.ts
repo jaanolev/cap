@@ -52,6 +52,14 @@ describe('Cap Operations', () => {
       expect(result.reason).toBeUndefined();
     });
 
+    test('should allow first consumption for user without end_users row', async () => {
+      const result = await consume(testProjectId, 'user_new_no_row', 5);
+      
+      expect(result.ok).toBe(true);
+      expect(result.remaining).toBe(15);
+      expect(result.reason).toBeUndefined();
+    });
+
     test('should track multiple consumptions', async () => {
       const result1 = await consume(testProjectId, 'user_allow_2', 5);
       expect(result1.ok).toBe(true);
@@ -75,6 +83,16 @@ describe('Cap Operations', () => {
       await consume(testProjectId, 'user_deny_1', 20);
       
       const result = await consume(testProjectId, 'user_deny_1', 1);
+      
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe('insufficient_balance');
+      expect(result.remaining).toBe(0);
+    });
+
+    test('should deny 21st unit in a day', async () => {
+      await consume(testProjectId, 'user_deny_21', 20);
+      
+      const result = await consume(testProjectId, 'user_deny_21', 1);
       
       expect(result.ok).toBe(false);
       expect(result.reason).toBe('insufficient_balance');
