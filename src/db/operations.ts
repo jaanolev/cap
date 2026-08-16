@@ -25,7 +25,7 @@ export async function verifyApiKey(key: string): Promise<Project | null> {
     .from('api_keys')
     .select('project_id')
     .eq('key_hash', keyHash)
-    .single();
+    .maybeSingle();
   
   if (!apiKey) return null;
   
@@ -33,7 +33,7 @@ export async function verifyApiKey(key: string): Promise<Project | null> {
     .from('projects')
     .select('*')
     .eq('id', apiKey.project_id)
-    .single();
+    .maybeSingle();
   
   return project;
 }
@@ -90,9 +90,8 @@ export async function consume(
     .from('consume_events')
     .select('*')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
     .eq('idempotency_key', effectiveIdempotencyKey)
-    .single();
+    .maybeSingle();
   
   if (existing) {
     return {
@@ -106,7 +105,7 @@ export async function consume(
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .single();
+    .maybeSingle();
   
   if (!project) {
     return { ok: false, reason: 'project_not_found' };
@@ -117,11 +116,11 @@ export async function consume(
     .select('*')
     .eq('project_id', projectId)
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
   
-  const dailyLimit = endUser?.daily_limit !== null 
-    ? Number(endUser.daily_limit) 
-    : Number(project.default_daily_limit);
+  const dailyLimit = endUser?.daily_limit == null
+    ? Number(project.default_daily_limit)
+    : Number(endUser.daily_limit);
   const extraBalance = endUser ? Number(endUser.extra_balance) : 0;
   
   const todayStart = new Date();
@@ -142,7 +141,7 @@ export async function consume(
   const reason = ok ? undefined : 'insufficient_balance';
   const remaining = ok ? available - units : available;
   
-  await supabase
+  const { error: insertError } = await supabase
     .from('consume_events')
     .insert({
       project_id: projectId,
@@ -153,6 +152,26 @@ export async function consume(
       reason: reason || null,
       remaining
     });
+  
+  if (insertError) {
+    if (insertError.code === '23505') {
+      const { data: raceExisting } = await supabase
+        .from('consume_events')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('idempotency_key', effectiveIdempotencyKey)
+        .maybeSingle();
+      
+      if (raceExisting) {
+        return {
+          ok: raceExisting.ok,
+          reason: raceExisting.reason || undefined,
+          remaining: raceExisting.remaining !== null ? Number(raceExisting.remaining) : undefined
+        };
+      }
+    }
+    throw new Error(`Failed to insert consume event: ${insertError.message}`);
+  }
   
   return { ok, reason, remaining };
 }
@@ -165,7 +184,7 @@ export async function whyDenied(
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .single();
+    .maybeSingle();
   
   if (!project) {
     return { 
@@ -179,11 +198,11 @@ export async function whyDenied(
     .select('*')
     .eq('project_id', projectId)
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
   
-  const dailyLimit = endUser?.daily_limit !== null 
-    ? Number(endUser.daily_limit) 
-    : Number(project.default_daily_limit);
+  const dailyLimit = endUser?.daily_limit == null
+    ? Number(project.default_daily_limit)
+    : Number(endUser.daily_limit);
   const extraBalance = endUser ? Number(endUser.extra_balance) : 0;
   
   const todayStart = new Date();
