@@ -80,6 +80,13 @@ app.post('/v1/why_denied', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Cap API running on port ${PORT}`);
-});
+
+// Export the Express app for Vercel
+export default app;
+
+// Only start the server if running locally (not in Vercel)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Cap API running on port ${PORT}`);
+  });
+}
