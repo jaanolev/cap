@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cap": {
+      "command": "node",
+      "args": ["dist/mcp/server.js"],
+      "env": {
+        "SUPABASE_URL": "https://iywsldhgmcyawpoxfhdn.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "${SUPABASE_SERVICE_ROLE_KEY}"
+      }
+    }
+  }
+}
