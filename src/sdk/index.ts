@@ -49,6 +49,10 @@ export class CapClient {
       }),
     });
 
+    if (response.status === 402) {
+      return response.json() as Promise<ConsumeResult>;
+    }
+
     if (!response.ok) {
       const error = await response.json() as { error?: string };
       throw new Error(error.error || 'Failed to consume');

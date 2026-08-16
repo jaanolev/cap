@@ -41,12 +41,15 @@ export async function verifyApiKey(key: string): Promise<Project | null> {
 export async function createSandboxProject(): Promise<{ projectId: string; apiKey: string }> {
   const { nanoid } = await import('nanoid');
   
+  const claimToken = nanoid(32);
+  
   const { data: project, error: projectError } = await supabase
     .from('projects')
     .insert({
       name: 'sandbox',
       default_daily_limit: 20,
-      fail_closed: true
+      fail_closed: true,
+      claim_token: claimToken
     })
     .select()
     .single();
@@ -80,22 +83,23 @@ export async function consume(
   units: number,
   idempotencyKey?: string
 ): Promise<ConsumeResult> {
-  if (idempotencyKey) {
-    const { data: existing } = await supabase
-      .from('consume_events')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('user_id', userId)
-      .eq('idempotency_key', idempotencyKey)
-      .single();
-    
-    if (existing) {
-      return {
-        ok: existing.ok,
-        reason: existing.reason || undefined,
-        remaining: existing.remaining !== null ? Number(existing.remaining) : undefined
-      };
-    }
+  const { nanoid } = await import('nanoid');
+  const effectiveIdempotencyKey = idempotencyKey || nanoid();
+  
+  const { data: existing } = await supabase
+    .from('consume_events')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .eq('idempotency_key', effectiveIdempotencyKey)
+    .single();
+  
+  if (existing) {
+    return {
+      ok: existing.ok,
+      reason: existing.reason || undefined,
+      remaining: existing.remaining !== null ? Number(existing.remaining) : undefined
+    };
   }
   
   const { data: project } = await supabase
@@ -144,7 +148,7 @@ export async function consume(
       project_id: projectId,
       user_id: userId,
       units,
-      idempotency_key: idempotencyKey || null,
+      idempotency_key: effectiveIdempotencyKey,
       ok,
       reason: reason || null,
       remaining

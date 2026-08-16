@@ -89,7 +89,7 @@ Consumes units for a user. Idempotent with `idempotency_key`.
 }
 ```
 
-**Response:**
+**Response (200 OK):**
 ```json
 {
   "ok": true,
@@ -97,7 +97,7 @@ Consumes units for a user. Idempotent with `idempotency_key`.
 }
 ```
 
-Or denied:
+**Response (402 Payment Required - denied):**
 ```json
 {
   "ok": false,

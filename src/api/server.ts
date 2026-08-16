@@ -39,6 +39,11 @@ app.post('/v1/consume', async (req, res) => {
     }
     
     const result = await consume(project.id, user_id, units, idempotency_key);
+    
+    if (!result.ok) {
+      return res.status(402).json(result);
+    }
+    
     res.json(result);
   } catch (error) {
     console.error('Error consuming:', error);

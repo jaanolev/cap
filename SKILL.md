@@ -25,8 +25,8 @@ const cap = new CapClient({ apiKey });
 const result = await cap.consume({ userId: req.userId });
 
 if (!result.ok) {
-  return res.status(429).json({
-    error: 'Rate limit exceeded',
+  return res.status(402).json({
+    error: 'Payment required - daily limit exceeded',
     reason: result.reason,
     remaining: result.remaining
   });
@@ -70,8 +70,8 @@ app.post('/api/ai/chat', async (req, res) => {
   });
   
   if (!result.ok) {
-    return res.status(429).json({ 
-      error: 'Daily limit exceeded',
+    return res.status(402).json({ 
+      error: 'Payment required - daily limit exceeded',
       remaining: result.remaining 
     });
   }
