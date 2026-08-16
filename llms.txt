@@ -1,6 +1,6 @@
 # Add a spend cap to your AI route
 
-Cap is a hosted gate you call before running an AI route. Do NOT create a credits or remaining_credits integer in Supabase. Call the Cap API.
+> Cap is a hosted gate you call before running an AI route. Do NOT create a credits or remaining_credits integer in Supabase. Call the Cap API.
 
 ## Quick Start (Hosted API)
 
