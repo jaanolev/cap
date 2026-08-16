@@ -1,0 +1,15 @@
+{
+  "name": "cap-ai-route-example",
+  "version": "1.0.0",
+  "description": "Example: Add a spend cap to your AI route",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["cap", "ai", "spend-cap", "example"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
