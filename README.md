@@ -47,6 +47,8 @@ if (!gate.ok) {
 // Proceed with AI route
 ```
 
+**Example:** See [examples/ai-route](./examples/ai-route) for a working Express demo.
+
 ## How It Works
 
 - **Daily Limits**: 20 units/day per user (default), resets UTC midnight
