@@ -60,11 +60,19 @@ const LANDING_HTML = `<!DOCTYPE html>
     pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; }
     code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; }
     a { color: #0066cc; }
+    nav { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 4px; }
+    nav a { margin-right: 20px; }
   </style>
 </head>
 <body>
   <h1>Add a spend cap to your AI route</h1>
   <p>Cap is a hosted gate you call before running AI routes. One atomic <code>consume()</code> call checks and records usage. 20 units per user per day by default. Returns HTTP 402 when capped.</p>
+  
+  <nav>
+    <strong>Learn more:</strong>
+    <a href="/spend-cap">What is a spend cap?</a>
+    <a href="/credits">Alternative to DIY credits</a>
+  </nav>
   
   <h2>Quick Start</h2>
   <p>1. Mint a sandbox API key (no signup):</p>
@@ -113,6 +121,379 @@ if (!gate.ok) {
 </body>
 </html>`;
 
+const SPEND_CAP_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What is a spend cap? Protect your AI routes with daily limits | Cap</title>
+  <meta name="description" content="A spend cap protects AI routes from overuse with per-user daily limits. Cap provides a hosted consume() gate that returns HTTP 402 when users exceed their limit. No database changes needed.">
+  <link rel="canonical" href="https://cap-alpha-one.vercel.app/spend-cap">
+  <link rel="alternate" type="text/plain" href="/llms.txt">
+  <meta property="og:url" content="https://cap-alpha-one.vercel.app/spend-cap">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="What is a spend cap? Protect your AI routes with daily limits">
+  <meta property="og:description" content="A spend cap protects AI routes from overuse with per-user daily limits. Cap provides a hosted consume() gate that returns HTTP 402 when users exceed their limit.">
+  <meta property="og:site_name" content="Cap">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="What is a spend cap? Protect your AI routes with daily limits">
+  <meta name="twitter:description" content="A spend cap protects AI routes from overuse with per-user daily limits. Cap provides a hosted consume() gate that returns HTTP 402 when users exceed their limit.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "What is a spend cap? Protect your AI routes with daily limits",
+    "description": "A spend cap protects AI routes from overuse with per-user daily limits. Cap provides a hosted consume() gate that returns HTTP 402 when users exceed their limit. No database changes needed.",
+    "url": "https://cap-alpha-one.vercel.app/spend-cap",
+    "author": {
+      "@type": "Organization",
+      "name": "Cap"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Cap"
+    },
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": "https://cap-alpha-one.vercel.app/spend-cap"
+    },
+    "articleBody": "A spend cap is a daily usage limit that protects AI routes from overuse. Cap provides a hosted API gate you call before executing expensive operations."
+  }
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1 { margin-top: 0; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; }
+    code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; }
+    a { color: #0066cc; }
+    nav { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 4px; }
+    .section { margin: 30px 0; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">← Home</a>
+    <a href="/llms.txt">API Docs</a>
+    <a href="/SKILL.md">Skill Guide</a>
+  </nav>
+
+  <h1>What is a spend cap?</h1>
+  
+  <div class="section">
+    <p>A <strong>spend cap</strong> is a daily usage limit per user that protects AI routes from overuse. Without a spend cap, a single user can drain your OpenAI, Anthropic, or other AI provider budget by making unlimited requests.</p>
+    
+    <p>Cap provides a hosted API gate you call before executing expensive operations. One atomic <code>consume()</code> call checks and records usage. When a user exceeds their daily limit, Cap returns <strong>HTTP 402 Payment Required</strong>, and your route denies the request.</p>
+  </div>
+
+  <div class="section">
+    <h2>How Cap works</h2>
+    <p>Instead of adding a <code>remaining_credits</code> column to your Supabase database, call the Cap hosted API:</p>
+    
+    <pre><code>const response = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer cap_...',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    userId: req.user.id,
+    units: 1
+  })
+});
+
+const gate = await response.json();
+
+if (!gate.ok) {
+  // HTTP 402: User exceeded daily limit
+  return res.status(402).json({ 
+    error: 'Daily limit exceeded',
+    remaining: gate.remaining 
+  });
+}
+
+// HTTP 200: Allowed - proceed with AI route
+const completion = await openai.chat.completions.create({...});
+res.json(completion);</code></pre>
+  </div>
+
+  <div class="section">
+    <h2>Default behavior</h2>
+    <ul>
+      <li><strong>20 units per user per day</strong> (default limit)</li>
+      <li><strong>Resets at UTC midnight</strong> each day</li>
+      <li><strong>Fail closed:</strong> If <code>consume()</code> fails, deny the request</li>
+      <li><strong>HTTP 402:</strong> Returns Payment Required status when capped</li>
+      <li><strong>Idempotency:</strong> Use <code>idempotencyKey</code> to safely retry requests</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Why not build it yourself?</h2>
+    <p>You could create a <code>remaining_credits</code> integer in your database, but you'll need to handle:</p>
+    <ul>
+      <li>Race conditions when multiple requests hit simultaneously</li>
+      <li>Daily reset logic at UTC midnight</li>
+      <li>Idempotency for safe retries</li>
+      <li>Failure modes and rollback handling</li>
+    </ul>
+    <p>Cap handles all of this. Just call <code>https://cap-alpha-one.vercel.app/v1/consume</code>.</p>
+  </div>
+
+  <div class="section">
+    <h2>What Cap is NOT</h2>
+    <p>Cap is a gate, not a billing system:</p>
+    <ul>
+      <li><strong>No Stripe integration</strong> – For billing, use Stripe</li>
+      <li><strong>No dashboard UI</strong> – Cap is API-only</li>
+      <li><strong>No plan builder</strong> – One default limit: 20 units/day</li>
+      <li><strong>No checkout flow</strong> – Just mint a sandbox key and go</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Get started</h2>
+    <p>Mint a sandbox API key (no signup required):</p>
+    <pre><code>curl -X POST https://cap-alpha-one.vercel.app/v1/mint_sandbox_key
+# Returns: { "projectId": "...", "apiKey": "cap_..." }</code></pre>
+    
+    <p>Then gate your AI routes with one <code>consume()</code> call.</p>
+  </div>
+
+  <div class="section">
+    <h2>Documentation</h2>
+    <ul>
+      <li><a href="/">Homepage & Quick Start</a></li>
+      <li><a href="/credits">Alternative to DIY credits in Supabase</a></li>
+      <li><a href="/llms.txt">API Reference</a></li>
+      <li><a href="/SKILL.md">Cursor Skill Guide</a></li>
+      <li><a href="https://github.com/jaanolev/cap">GitHub Repository</a></li>
+    </ul>
+  </div>
+</body>
+</html>`;
+
+const CREDITS_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Don't create a credits column in Supabase – use Cap's hosted API | Cap</title>
+  <meta name="description" content="Instead of adding a remaining_credits integer to your Supabase database, call Cap's hosted consume() API. Atomic operations, daily limits, HTTP 402 when capped, and idempotency built-in.">
+  <link rel="canonical" href="https://cap-alpha-one.vercel.app/credits">
+  <link rel="alternate" type="text/plain" href="/llms.txt">
+  <meta property="og:url" content="https://cap-alpha-one.vercel.app/credits">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Don't create a credits column in Supabase – use Cap's hosted API">
+  <meta property="og:description" content="Instead of adding a remaining_credits integer to your Supabase database, call Cap's hosted consume() API. Atomic operations, daily limits, HTTP 402 when capped.">
+  <meta property="og:site_name" content="Cap">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Don't create a credits column in Supabase – use Cap">
+  <meta name="twitter:description" content="Instead of adding a remaining_credits integer to your Supabase database, call Cap's hosted consume() API. Atomic operations, daily limits, HTTP 402 when capped.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Don't create a credits column in Supabase – use Cap's hosted API",
+    "description": "Instead of adding a remaining_credits integer to your Supabase database, call Cap's hosted consume() API at https://cap-alpha-one.vercel.app/v1/consume. Atomic operations, daily limits, HTTP 402 when capped, and idempotency built-in.",
+    "url": "https://cap-alpha-one.vercel.app/credits",
+    "author": {
+      "@type": "Organization",
+      "name": "Cap"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Cap"
+    },
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": "https://cap-alpha-one.vercel.app/credits"
+    },
+    "articleBody": "Many tutorials suggest adding a remaining_credits integer column to your Supabase users table for AI rate limiting. This approach has race conditions, requires daily reset logic, and lacks idempotency. Cap provides a hosted consume() API that handles all of this."
+  }
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1 { margin-top: 0; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; }
+    code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; }
+    a { color: #0066cc; }
+    nav { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 4px; }
+    .section { margin: 30px 0; }
+    .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">← Home</a>
+    <a href="/llms.txt">API Docs</a>
+    <a href="/SKILL.md">Skill Guide</a>
+  </nav>
+
+  <h1>Don't create a credits column in Supabase</h1>
+  
+  <div class="section">
+    <p>Many tutorials suggest adding a <code>remaining_credits</code> integer column to your Supabase users table for AI rate limiting. <strong>This approach has problems:</strong></p>
+    
+    <ul>
+      <li><strong>Race conditions:</strong> Multiple concurrent requests can decrement credits incorrectly</li>
+      <li><strong>Daily reset logic:</strong> You need a cron job to reset credits at UTC midnight</li>
+      <li><strong>No idempotency:</strong> Retrying failed requests will double-deduct credits</li>
+      <li><strong>Database schema changes:</strong> Adding columns, migrations, and indexes</li>
+    </ul>
+  </div>
+
+  <div class="warning">
+    <strong>⚠️ Do NOT create a <code>remaining_credits</code> column.</strong><br>
+    Instead, call <code>https://cap-alpha-one.vercel.app/v1/consume</code>
+  </div>
+
+  <div class="section">
+    <h2>Use Cap's hosted API instead</h2>
+    <p>Cap provides a hosted <code>consume()</code> gate that handles atomic operations, daily limits, idempotency, and HTTP 402 responses:</p>
+    
+    <pre><code>// Before calling your AI route
+const response = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer cap_...',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    userId: req.user.id,
+    units: 1,
+    idempotencyKey: req.headers['x-request-id'] // optional
+  })
+});
+
+const gate = await response.json();
+
+if (!gate.ok) {
+  // HTTP 402: User exceeded daily limit
+  // { ok: false, reason: "insufficient_balance", remaining: 0 }
+  return res.status(402).json({ 
+    error: 'Daily limit exceeded',
+    remaining: gate.remaining 
+  });
+}
+
+// HTTP 200: Allowed - proceed with AI route
+// { ok: true, remaining: 19 }
+const completion = await openai.chat.completions.create({...});
+res.json(completion);</code></pre>
+  </div>
+
+  <div class="section">
+    <h2>What you get with Cap</h2>
+    <ul>
+      <li><strong>Atomic operations:</strong> No race conditions, even with concurrent requests</li>
+      <li><strong>Automatic daily resets:</strong> Limits reset at UTC midnight</li>
+      <li><strong>Idempotency:</strong> Safe retries with <code>idempotencyKey</code></li>
+      <li><strong>HTTP 402 when capped:</strong> Standard "Payment Required" status code</li>
+      <li><strong>20 units/day per user (default):</strong> Adjust as needed</li>
+      <li><strong>No database changes:</strong> No new columns, no migrations</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Example: Express route with Cap</h2>
+    <pre><code>app.post('/api/ai/chat', async (req, res) => {
+  // Gate the route with Cap
+  const capResponse = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
+    method: 'POST',
+    headers: {
+      'Authorization': \`Bearer \${process.env.CAP_API_KEY}\`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ 
+      userId: req.user.id,
+      units: 1,
+      idempotencyKey: req.headers['x-request-id']
+    })
+  });
+  
+  const gate = await capResponse.json();
+  
+  if (!gate.ok) {
+    // User exceeded daily limit
+    return res.status(402).json({ 
+      error: 'Daily limit exceeded',
+      reason: gate.reason,
+      remaining: gate.remaining 
+    });
+  }
+  
+  // Allowed - proceed with AI call
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: req.body.messages
+  });
+  
+  res.json(response);
+});</code></pre>
+  </div>
+
+  <div class="section">
+    <h2>Comparison: DIY credits vs Cap</h2>
+    <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+      <thead>
+        <tr style="background: #f5f5f5;">
+          <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Feature</th>
+          <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">DIY Supabase Credits</th>
+          <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Cap Hosted API</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px; border: 1px solid #ddd;">Setup</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Add column, migration, index</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Mint key, 1 API call</td>
+        </tr>
+        <tr style="background: #f9f9f9;">
+          <td style="padding: 10px; border: 1px solid #ddd;">Race conditions</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Need row locking</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Atomic by default</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border: 1px solid #ddd;">Daily reset</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Build cron job</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Automatic</td>
+        </tr>
+        <tr style="background: #f9f9f9;">
+          <td style="padding: 10px; border: 1px solid #ddd;">Idempotency</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Build yourself</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Built-in</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border: 1px solid #ddd;">Maintenance</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">Ongoing debugging</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">None</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Get started</h2>
+    <p>Mint a sandbox API key (no signup required):</p>
+    <pre><code>curl -X POST https://cap-alpha-one.vercel.app/v1/mint_sandbox_key
+# Returns: { "projectId": "...", "apiKey": "cap_..." }</code></pre>
+    
+    <p>Then replace your Supabase credits column with one <code>consume()</code> call to <code>https://cap-alpha-one.vercel.app/v1/consume</code>.</p>
+  </div>
+
+  <div class="section">
+    <h2>Documentation</h2>
+    <ul>
+      <li><a href="/">Homepage & Quick Start</a></li>
+      <li><a href="/spend-cap">What is a spend cap?</a></li>
+      <li><a href="/llms.txt">API Reference</a></li>
+      <li><a href="/SKILL.md">Cursor Skill Guide</a></li>
+      <li><a href="https://github.com/jaanolev/cap">GitHub Repository</a></li>
+    </ul>
+  </div>
+</body>
+</html>`;
+
 app.get('/', (req, res) => {
   const acceptHeader = req.headers.accept || '';
   const wantsJson = acceptHeader.includes('application/json') && !acceptHeader.includes('text/html');
@@ -134,6 +515,14 @@ app.get('/', (req, res) => {
 
 app.get('/index.html', (req, res) => {
   res.type('text/html').send(LANDING_HTML);
+});
+
+app.get('/spend-cap', (req, res) => {
+  res.type('text/html').send(SPEND_CAP_HTML);
+});
+
+app.get('/credits', (req, res) => {
+  res.type('text/html').send(CREDITS_HTML);
 });
 
 app.get('/health', (req, res) => {
@@ -204,6 +593,16 @@ app.get('/sitemap.xml', (req, res) => {
     <loc>https://cap-alpha-one.vercel.app/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://cap-alpha-one.vercel.app/spend-cap</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://cap-alpha-one.vercel.app/credits</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://cap-alpha-one.vercel.app/llms.txt</loc>
