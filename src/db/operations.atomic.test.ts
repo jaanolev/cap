@@ -2,6 +2,19 @@ import { describe, test, expect, beforeAll, afterEach } from '@jest/globals';
 import { createSandboxProject, consume, setLimit } from './operations.js';
 import { supabase } from './client.js';
 
+/**
+ * Atomic Operations Tests
+ * 
+ * IMPORTANT: These tests verify the actual Postgres consume_units RPC function.
+ * They are NOT mocked. Before running these tests, you must:
+ * 
+ * 1. Have a Supabase instance running
+ * 2. Execute supabase_functions.sql to create the consume_units function
+ * 3. Have SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your environment
+ * 
+ * The race condition tests verify that pg_advisory_xact_lock properly
+ * serializes concurrent consume calls for the same (project_id, user_id).
+ */
 describe('Cap Atomic Operations', () => {
   let testProjectId: string;
   let testApiKey: string;

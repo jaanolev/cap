@@ -53,6 +53,7 @@ if (!gate.ok) {
 
 - **Daily Limits**: 20 units/day per user (default), resets UTC midnight
 - **Customizable Limits**: Use `/v1/set_limit` to change per-user daily caps
+- **Atomic Operations**: consume() uses Postgres advisory locks to prevent race conditions
 - **Fail Closed**: If consume() fails, deny the request
 - **Idempotency**: Required `idempotencyKey` for safe retries and race prevention
 - **No Billing**: Cap is a gate, not Stripe. For billing, use Stripe.
