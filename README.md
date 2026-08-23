@@ -11,11 +11,11 @@ Cap is a hosted gate you call before running AI routes. One atomic `consume()` c
 curl -X POST https://cap-alpha-one.vercel.app/v1/mint_sandbox_key
 # Returns: { "projectId": "...", "apiKey": "cap_..." }
 
-# 2. Consume units
+# 2. Consume units (idempotencyKey required)
 curl -X POST https://cap-alpha-one.vercel.app/v1/consume \
   -H "Authorization: Bearer cap_..." \
   -H "Content-Type: application/json" \
-  -d '{"userId":"user_123","units":1}'
+  -d '{"userId":"user_123","units":1,"idempotencyKey":"req_abc123"}'
 # Returns: { "ok": true, "remaining": 19 }
 ```
 
@@ -32,7 +32,7 @@ const response = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
   body: JSON.stringify({
     userId: req.user.id,
     units: 1,
-    idempotencyKey: req.headers['x-request-id'] // optional
+    idempotencyKey: req.headers['x-request-id'] // REQUIRED
   })
 });
 
@@ -52,8 +52,9 @@ if (!gate.ok) {
 ## How It Works
 
 - **Daily Limits**: 20 units/day per user (default), resets UTC midnight
+- **Customizable Limits**: Use `/v1/set_limit` to change per-user daily caps
 - **Fail Closed**: If consume() fails, deny the request
-- **Idempotency**: Use `idempotencyKey` to safely retry
+- **Idempotency**: Required `idempotencyKey` for safe retries and race prevention
 - **No Billing**: Cap is a gate, not Stripe. For billing, use Stripe.
 
 ## Documentation
@@ -64,7 +65,8 @@ if (!gate.ok) {
 ## API Endpoints
 
 - `POST /v1/mint_sandbox_key` - Create sandbox key (no auth)
-- `POST /v1/consume` - Consume units (requires Bearer token)
+- `POST /v1/consume` - Consume units (requires Bearer token, idempotencyKey required)
+- `POST /v1/set_limit` - Set user's daily limit (requires Bearer token)
 - `POST /v1/why_denied` - Check balance details (requires Bearer token)
 
 ## MCP Server
@@ -88,6 +90,9 @@ cp .env.example .env
 # Add your Supabase credentials to .env:
 # SUPABASE_URL=https://your-project.supabase.co
 # SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Run the SQL function in your Supabase project
+# Execute the contents of supabase_functions.sql in the SQL editor
 
 # Build
 npm run build
@@ -116,20 +121,48 @@ To deploy your own instance:
 
 4. **Test**: Your API will be available at `https://your-project.vercel.app`
 
-### TypeScript SDK (In This Repo)
+### TypeScript SDK
 
-The SDK client at `src/sdk/index.ts` defaults to the hosted API. For local development:
+Publishing as **@usecap/sdk** (not yet on npm registry).
 
 ```typescript
-import { CapClient } from './src/sdk';
+import { CapClient, consume, setLimit } from '@usecap/sdk';
 
+// Option 1: Use the client class
 const cap = new CapClient({ 
   apiKey: 'cap_...',
-  baseUrl: 'http://localhost:3000' // override for local
+  baseUrl: 'https://cap-alpha-one.vercel.app' // optional, defaults to hosted
+});
+
+await cap.consume({ 
+  userId: 'user_123', 
+  units: 1,
+  idempotencyKey: 'req_abc' // required
+});
+
+await cap.setLimit({ 
+  userId: 'user_123', 
+  dailyLimit: 50 
+});
+
+// Option 2: Use standalone functions
+await consume('cap_...', { 
+  userId: 'user_123', 
+  units: 1,
+  idempotencyKey: 'req_abc'
+});
+
+await setLimit('cap_...', { 
+  userId: 'user_123', 
+  dailyLimit: 50 
 });
 ```
 
-The SDK is NOT published to npm. Use the fetch snippets in the docs, or copy the SDK files from this repo.
+To publish:
+```bash
+npm run build
+npm publish --access public
+```
 
 ## License
 

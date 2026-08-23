@@ -6,7 +6,12 @@ export interface CapConfig {
 export interface ConsumeOptions {
   userId: string;
   units?: number;
-  idempotencyKey?: string;
+  idempotencyKey: string;
+}
+
+export interface SetLimitOptions {
+  userId: string;
+  dailyLimit: number;
 }
 
 export interface ConsumeResult {
@@ -61,6 +66,27 @@ export class CapClient {
     return response.json() as Promise<ConsumeResult>;
   }
 
+  async setLimit(options: SetLimitOptions): Promise<{ success: boolean; userId: string; dailyLimit: number }> {
+    const response = await fetch(`${this.baseUrl}/v1/set_limit`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: options.userId,
+        daily_limit: options.dailyLimit,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json() as { error?: string };
+      throw new Error(error.error || 'Failed to set limit');
+    }
+
+    return response.json() as Promise<{ success: boolean; userId: string; dailyLimit: number }>;
+  }
+
   async whyDenied(userId: string): Promise<WhyDeniedResult> {
     const response = await fetch(`${this.baseUrl}/v1/why_denied`, {
       method: 'POST',
@@ -94,4 +120,31 @@ export async function mintSandboxKey(baseUrl = 'https://cap-alpha-one.vercel.app
   }
 
   return response.json() as Promise<{ projectId: string; apiKey: string }>;
+}
+
+export async function consume(
+  apiKey: string,
+  options: ConsumeOptions,
+  baseUrl = 'https://cap-alpha-one.vercel.app'
+): Promise<ConsumeResult> {
+  const client = new CapClient({ apiKey, baseUrl });
+  return client.consume(options);
+}
+
+export async function whyDenied(
+  apiKey: string,
+  userId: string,
+  baseUrl = 'https://cap-alpha-one.vercel.app'
+): Promise<WhyDeniedResult> {
+  const client = new CapClient({ apiKey, baseUrl });
+  return client.whyDenied(userId);
+}
+
+export async function setLimit(
+  apiKey: string,
+  options: SetLimitOptions,
+  baseUrl = 'https://cap-alpha-one.vercel.app'
+): Promise<{ success: boolean; userId: string; dailyLimit: number }> {
+  const client = new CapClient({ apiKey, baseUrl });
+  return client.setLimit(options);
 }

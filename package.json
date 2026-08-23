@@ -1,16 +1,12 @@
 {
-  "name": "cap",
+  "name": "@usecap/sdk",
   "version": "0.1.0",
   "description": "Add a spend cap to your AI route",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/sdk/index.js",
+  "types": "./dist/sdk/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./sdk": {
       "import": "./dist/sdk/index.js",
       "types": "./dist/sdk/index.d.ts"
     }
@@ -21,16 +17,24 @@
     "vercel-build": "npm run build",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
     "start": "node dist/api/server.js",
-    "mcp": "node dist/mcp/server.js"
+    "mcp": "node dist/mcp/server.js",
+    "pack": "npm run build && npm pack"
   },
   "keywords": [
     "ai",
     "spend-cap",
-    "rate-limit",
-    "agent"
+    "http-402",
+    "ai-route",
+    "consume",
+    "rate-limit"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jaanolev/cap.git"
+  },
+  "homepage": "https://github.com/jaanolev/cap",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@supabase/supabase-js": "^2.48.1",

@@ -2,7 +2,7 @@ import express from 'express';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { createSandboxProject, verifyApiKey, consume, whyDenied } from '../db/operations.js';
+import { createSandboxProject, verifyApiKey, consume, whyDenied, setLimit } from '../db/operations.js';
 import { LLMS_TXT, LLMS_FULL_TXT, SKILL_MD } from '../docs/content.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -89,7 +89,7 @@ const LANDING_HTML = `<!DOCTYPE html>
   body: JSON.stringify({
     userId: 'user_123',
     units: 1,
-    idempotencyKey: 'req_xyz' // optional
+    idempotencyKey: 'req_xyz' // required
   })
 });
 
@@ -694,6 +694,13 @@ app.post('/v1/consume', async (req, res) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
     
+    if (!idempotencyKey || idempotencyKey.trim() === '') {
+      return res.status(400).json({ 
+        error: 'idempotency_key is required',
+        details: 'Provide a unique idempotency_key to ensure safe retries and prevent double-charging'
+      });
+    }
+    
     const result = await consume(project.id, userId, units, idempotencyKey);
     
     if (!result.ok) {
@@ -736,6 +743,51 @@ app.post('/v1/why_denied', async (req, res) => {
     console.error('Error getting denial reason:', error);
     res.status(500).json({ 
       error: 'Failed to get denial reason',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/v1/set_limit', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    }
+    
+    const apiKey = authHeader.substring(7);
+    const project = await verifyApiKey(apiKey);
+    
+    if (!project) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    
+    const userId = req.body.user_id || req.body.userId;
+    const dailyLimit = req.body.daily_limit || req.body.dailyLimit;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'user_id is required' });
+    }
+    
+    if (dailyLimit === undefined || dailyLimit === null) {
+      return res.status(400).json({ error: 'daily_limit is required' });
+    }
+    
+    if (typeof dailyLimit !== 'number' || dailyLimit < 0) {
+      return res.status(400).json({ error: 'daily_limit must be a non-negative number' });
+    }
+    
+    await setLimit(project.id, userId, dailyLimit);
+    
+    res.json({ 
+      success: true,
+      userId,
+      dailyLimit
+    });
+  } catch (error) {
+    console.error('Error setting limit:', error);
+    res.status(500).json({ 
+      error: 'Failed to set limit',
       message: error instanceof Error ? error.message : String(error)
     });
   }

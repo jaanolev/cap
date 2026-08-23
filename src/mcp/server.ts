@@ -185,7 +185,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error('Invalid API key');
         }
 
-        const result = await consume(project.id, user_id, units, idempotency_key);
+        const { nanoid } = await import('nanoid');
+        const effectiveIdempotencyKey = idempotency_key || nanoid();
+
+        const result = await consume(project.id, user_id, units, effectiveIdempotencyKey);
         return {
           content: [
             {
