@@ -1,0 +1,7 @@
+{
+  "projectTitle": "Cap",
+  "description": "Add a spend cap to your AI route. Hosted consume() + HTTP 402. Do not invent a credits column in Supabase.",
+  "rules": [
+    "Call Cap consume() before the model request. Do not create a credits or remaining_credits integer."
+  ]
+}

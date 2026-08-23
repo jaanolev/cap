@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
+import { createSandboxProject } from '../db/operations.js';
+import { supabase } from '../db/client.js';
 
 // Import the app (we'll need to refactor server.ts slightly to export just the app)
 // For now, we'll test the content directly
@@ -112,6 +114,15 @@ describe('Landing Page', () => {
       expect(response.text).not.toContain('Vercel AI Gateway');
       expect(response.text).not.toContain('llm-hard-cap');
     });
+
+    test('HTML should show idempotencyKey as required', async () => {
+      const response = await request(app)
+        .get('/')
+        .set('Accept', 'text/html');
+
+      expect(response.text).toContain('idempotencyKey');
+      expect(response.text).toContain('// required');
+    });
   });
 
   describe('GET /index.html', () => {
@@ -123,6 +134,206 @@ describe('Landing Page', () => {
       expect(response.type).toBe('text/html');
       expect(response.text).toContain('<title>Add a spend cap to your AI route</title>');
       expect(response.text).toContain('https://cap-alpha-one.vercel.app');
+    });
+  });
+});
+
+describe('API Endpoints', () => {
+  let app: express.Application;
+  let testProjectId: string;
+  let testApiKey: string;
+
+  beforeAll(async () => {
+    const serverModule = await import('./server.js');
+    app = serverModule.default;
+    
+    const result = await createSandboxProject();
+    testProjectId = result.projectId;
+    testApiKey = result.apiKey;
+  });
+
+  afterAll(async () => {
+    await supabase
+      .from('consume_events')
+      .delete()
+      .eq('project_id', testProjectId);
+    
+    await supabase
+      .from('end_users')
+      .delete()
+      .eq('project_id', testProjectId);
+  });
+
+  describe('POST /v1/consume', () => {
+    test('should reject missing idempotencyKey', async () => {
+      const response = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId: 'user_test_1',
+          units: 1
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('idempotency_key is required');
+    });
+
+    test('should reject empty idempotencyKey', async () => {
+      const response = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId: 'user_test_2',
+          units: 1,
+          idempotencyKey: ''
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('idempotency_key is required');
+    });
+
+    test('should accept valid consume with idempotencyKey', async () => {
+      const response = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId: 'user_test_3',
+          units: 1,
+          idempotencyKey: 'test_key_1'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.remaining).toBe(19);
+    });
+
+    test('should return 402 when limit exceeded', async () => {
+      const userId = 'user_test_4';
+      
+      // Consume all 20 units
+      for (let i = 0; i < 20; i++) {
+        await request(app)
+          .post('/v1/consume')
+          .set('Authorization', `Bearer ${testApiKey}`)
+          .send({
+            userId,
+            units: 1,
+            idempotencyKey: `key_${i}`
+          });
+      }
+      
+      // 21st attempt should fail
+      const response = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId,
+          units: 1,
+          idempotencyKey: 'key_21'
+        });
+
+      expect(response.status).toBe(402);
+      expect(response.body.ok).toBe(false);
+      expect(response.body.reason).toBe('insufficient_balance');
+      expect(response.body.remaining).toBe(0);
+    });
+  });
+
+  describe('POST /v1/set_limit', () => {
+    test('should set custom limit', async () => {
+      const userId = 'user_limit_1';
+      
+      const response = await request(app)
+        .post('/v1/set_limit')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId,
+          dailyLimit: 50
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.userId).toBe(userId);
+      expect(response.body.dailyLimit).toBe(50);
+      
+      // Verify by consuming
+      const consumeResponse = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId,
+          units: 30,
+          idempotencyKey: 'limit_test_1'
+        });
+
+      expect(consumeResponse.status).toBe(200);
+      expect(consumeResponse.body.ok).toBe(true);
+      expect(consumeResponse.body.remaining).toBe(20);
+    });
+
+    test('should reject missing userId', async () => {
+      const response = await request(app)
+        .post('/v1/set_limit')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          dailyLimit: 50
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('user_id is required');
+    });
+
+    test('should reject missing dailyLimit', async () => {
+      const response = await request(app)
+        .post('/v1/set_limit')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId: 'user_limit_2'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('daily_limit is required');
+    });
+
+    test('should reject negative dailyLimit', async () => {
+      const response = await request(app)
+        .post('/v1/set_limit')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId: 'user_limit_3',
+          dailyLimit: -10
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('daily_limit must be a non-negative number');
+    });
+
+    test('should accept dailyLimit of 0', async () => {
+      const userId = 'user_limit_4';
+      
+      const response = await request(app)
+        .post('/v1/set_limit')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId,
+          dailyLimit: 0
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      
+      // Verify by consuming - should fail immediately
+      const consumeResponse = await request(app)
+        .post('/v1/consume')
+        .set('Authorization', `Bearer ${testApiKey}`)
+        .send({
+          userId,
+          units: 1,
+          idempotencyKey: 'limit_test_2'
+        });
+
+      expect(consumeResponse.status).toBe(402);
+      expect(consumeResponse.body.ok).toBe(false);
     });
   });
 });

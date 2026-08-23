@@ -81,99 +81,65 @@ export async function consume(
   projectId: string,
   userId: string,
   units: number,
-  idempotencyKey?: string
+  idempotencyKey: string
 ): Promise<ConsumeResult> {
-  const { nanoid } = await import('nanoid');
-  const effectiveIdempotencyKey = idempotencyKey || nanoid();
-  
+  const { data, error } = await supabase
+    .rpc('consume_units', {
+      p_project_id: projectId,
+      p_user_id: userId,
+      p_units: units,
+      p_idempotency_key: idempotencyKey
+    })
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to consume units: ${error.message}`);
+  }
+
+  const result = data as { ok: boolean; reason: string | null; remaining: number };
+
+  return {
+    ok: result.ok,
+    reason: result.reason || undefined,
+    remaining: result.remaining !== null ? Number(result.remaining) : undefined
+  };
+}
+
+export async function setLimit(
+  projectId: string,
+  userId: string,
+  dailyLimit: number
+): Promise<void> {
   const { data: existing } = await supabase
-    .from('consume_events')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('idempotency_key', effectiveIdempotencyKey)
-    .maybeSingle();
-  
-  if (existing) {
-    return {
-      ok: existing.ok,
-      reason: existing.reason || undefined,
-      remaining: existing.remaining !== null ? Number(existing.remaining) : undefined
-    };
-  }
-  
-  const { data: project } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('id', projectId)
-    .maybeSingle();
-  
-  if (!project) {
-    return { ok: false, reason: 'project_not_found' };
-  }
-  
-  const { data: endUser } = await supabase
     .from('end_users')
     .select('*')
     .eq('project_id', projectId)
     .eq('user_id', userId)
     .maybeSingle();
-  
-  const dailyLimit = endUser?.daily_limit == null
-    ? Number(project.default_daily_limit)
-    : Number(endUser.daily_limit);
-  const extraBalance = endUser ? Number(endUser.extra_balance) : 0;
-  
-  const todayStart = new Date();
-  todayStart.setUTCHours(0, 0, 0, 0);
-  
-  const { data: todayEvents } = await supabase
-    .from('consume_events')
-    .select('units')
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .eq('ok', true)
-    .gte('created_at', todayStart.toISOString());
-  
-  const usedToday = todayEvents?.reduce((sum, e) => sum + Number(e.units), 0) || 0;
-  const available = dailyLimit + extraBalance - usedToday;
-  
-  const ok = available >= units;
-  const reason = ok ? undefined : 'insufficient_balance';
-  const remaining = ok ? available - units : available;
-  
-  const { error: insertError } = await supabase
-    .from('consume_events')
-    .insert({
-      project_id: projectId,
-      user_id: userId,
-      units,
-      idempotency_key: effectiveIdempotencyKey,
-      ok,
-      reason: reason || null,
-      remaining
-    });
-  
-  if (insertError) {
-    if (insertError.code === '23505') {
-      const { data: raceExisting } = await supabase
-        .from('consume_events')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('idempotency_key', effectiveIdempotencyKey)
-        .maybeSingle();
-      
-      if (raceExisting) {
-        return {
-          ok: raceExisting.ok,
-          reason: raceExisting.reason || undefined,
-          remaining: raceExisting.remaining !== null ? Number(raceExisting.remaining) : undefined
-        };
-      }
+
+  if (existing) {
+    const { error } = await supabase
+      .from('end_users')
+      .update({ daily_limit: dailyLimit })
+      .eq('project_id', projectId)
+      .eq('user_id', userId);
+    
+    if (error) {
+      throw new Error(`Failed to update limit: ${error.message}`);
     }
-    throw new Error(`Failed to insert consume event: ${insertError.message}`);
+  } else {
+    const { error } = await supabase
+      .from('end_users')
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        daily_limit: dailyLimit,
+      });
+    
+    if (error) {
+      throw new Error(`Failed to create user limit: ${error.message}`);
+    }
   }
-  
-  return { ok, reason, remaining };
 }
 
 export async function whyDenied(

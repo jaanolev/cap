@@ -25,7 +25,7 @@ Base URL: https://cap-alpha-one.vercel.app
      body: JSON.stringify({
        userId: 'user_123',
        units: 1,
-       idempotencyKey: 'req_xyz' // optional, for safe retries
+       idempotencyKey: 'req_xyz' // REQUIRED for safe retries and race prevention
      })
    });
 
@@ -42,7 +42,16 @@ Base URL: https://cap-alpha-one.vercel.app
    // Proceed with AI route
    \`\`\`
 
-3. Check why denied (optional, for debugging):
+3. Set custom limit (optional):
+   \`\`\`bash
+   curl -X POST https://cap-alpha-one.vercel.app/v1/set_limit \\
+     -H "Authorization: Bearer cap_..." \\
+     -H "Content-Type: application/json" \\
+     -d '{"userId":"user_123","dailyLimit":50}'
+   # Returns: { "success": true, "userId": "user_123", "dailyLimit": 50 }
+   \`\`\`
+
+4. Check why denied (optional, for debugging):
    \`\`\`bash
    curl -X POST https://cap-alpha-one.vercel.app/v1/why_denied \\
      -H "Authorization: Bearer cap_..." \\
@@ -54,8 +63,10 @@ Base URL: https://cap-alpha-one.vercel.app
 ## How It Works
 
 - **Daily Limits**: Each user gets 20 units/day (default). Resets at UTC midnight.
+- **Custom Limits**: Use /v1/set_limit to change per-user caps.
+- **Atomic**: consume() is fully atomic - no race conditions on the last unit.
 - **Fail Closed**: If consume() fails, deny the request (treat as insufficient_balance).
-- **Idempotency**: Use idempotencyKey to safely retry. Same key within 24h returns cached result.
+- **Idempotency**: REQUIRED idempotencyKey prevents double-charging and race conditions.
 - **Extra Balance**: Can be added per user for temporary overages.
 
 ## API Endpoints
@@ -82,7 +93,7 @@ Consumes units for a user. Atomic check-and-record.
 {
   "userId": "string",
   "units": 1,
-  "idempotencyKey": "optional_string"
+  "idempotencyKey": "string" // REQUIRED
 }
 \`\`\`
 
@@ -94,12 +105,43 @@ Consumes units for a user. Atomic check-and-record.
 }
 \`\`\`
 
+**Response (400 Bad Request - missing idempotencyKey):**
+\`\`\`json
+{
+  "error": "idempotency_key is required",
+  "details": "Provide a unique idempotency_key to ensure safe retries and prevent double-charging"
+}
+\`\`\`
+
 **Response (402 Payment Required - denied):**
 \`\`\`json
 {
   "ok": false,
   "reason": "insufficient_balance",
   "remaining": 0
+}
+\`\`\`
+
+### POST /v1/set_limit
+Sets a custom daily limit for a user. Default is 20 if never set.
+
+**Headers:**
+- \`Authorization: Bearer cap_...\`
+
+**Body (accepts snake_case or camelCase):**
+\`\`\`json
+{
+  "userId": "string",
+  "dailyLimit": 50
+}
+\`\`\`
+
+**Response (200 OK):**
+\`\`\`json
+{
+  "success": true,
+  "userId": "user_123",
+  "dailyLimit": 50
 }
 \`\`\`
 
@@ -130,25 +172,38 @@ Explains current balance state for a user. For debugging.
 }
 \`\`\`
 
-## TypeScript SDK (In This Repo)
+## TypeScript SDK
 
-This repository includes an SDK client at \`src/sdk/index.ts\`. If you copy it:
+Publishing as **@usecap/sdk** (intended for public host usecap.dev, currently at https://cap-alpha-one.vercel.app).
 
 \`\`\`typescript
-import { CapClient } from './sdk';
+import { CapClient, consume, setLimit } from '@usecap/sdk';
 
 const cap = new CapClient({ 
   apiKey: 'cap_...',
-  baseUrl: 'https://cap-alpha-one.vercel.app' // must set explicitly
+  baseUrl: 'https://cap-alpha-one.vercel.app' // defaults to this
 });
 
-const gate = await cap.consume({ userId: 'user_123', units: 1 });
+const gate = await cap.consume({ 
+  userId: 'user_123', 
+  units: 1,
+  idempotencyKey: 'req_abc' // required
+});
+
 if (!gate.ok) {
   return res.status(402).json({ error: 'Daily limit exceeded' });
 }
+
+await cap.setLimit({ userId: 'user_123', dailyLimit: 50 });
 \`\`\`
 
-The SDK is NOT published to npm. Use the fetch snippet above, or copy the SDK files from this repo.
+Or use standalone functions:
+\`\`\`typescript
+import { consume, setLimit } from '@usecap/sdk';
+
+await consume('cap_...', { userId: 'user_123', units: 1, idempotencyKey: 'req_abc' });
+await setLimit('cap_...', { userId: 'user_123', dailyLimit: 50 });
+\`\`\`
 
 ## What Cap Is NOT
 
@@ -490,7 +545,7 @@ const response = await fetch('https://cap-alpha-one.vercel.app/v1/consume', {
   body: JSON.stringify({
     userId: req.user.id,
     units: 1,
-    idempotencyKey: req.headers['x-request-id'] // optional
+    idempotencyKey: req.headers['x-request-id'] // REQUIRED
   })
 });
 
@@ -510,13 +565,30 @@ const completion = await openai.chat.completions.create({...});
 res.json(completion);
 \`\`\`
 
+### Step 3 (Optional): Set custom limit
+
+\`\`\`typescript
+await fetch('https://cap-alpha-one.vercel.app/v1/set_limit', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer cap_...',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    userId: 'user_123',
+    dailyLimit: 50
+  })
+});
+\`\`\`
+
 ## Key Concepts
 
 1. **Hosted Service**: Call https://cap-alpha-one.vercel.app, do NOT self-host or store credits in your DB
 2. **Sandbox Keys**: Mint instantly, no signup required
-3. **Daily Limits**: 20 units/day per user (default), resets UTC midnight
-4. **Fail Closed**: If consume() fails, deny the request
-5. **Idempotency**: Use idempotencyKey for safe retries
+3. **Daily Limits**: 20 units/day per user (default), resets UTC midnight. Use /v1/set_limit to change.
+4. **Atomic Operations**: consume() is fully atomic - no race conditions
+5. **Fail Closed**: If consume() fails, deny the request
+6. **Idempotency**: REQUIRED idempotencyKey prevents double-charging
 
 ## Example: Express Route with Cap
 
@@ -534,7 +606,7 @@ app.post('/api/ai/chat', async (req, res) => {
     body: JSON.stringify({ 
       userId,
       units: 1,
-      idempotencyKey: req.headers['x-request-id']
+      idempotencyKey: req.headers['x-request-id'] // required
     })
   });
   
@@ -570,7 +642,11 @@ export default async function handler(req, res) {
       'Authorization': \`Bearer \${process.env.CAP_API_KEY}\`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ userId, units: 1 })
+    body: JSON.stringify({ 
+      userId, 
+      units: 1,
+      idempotencyKey: crypto.randomUUID() // required
+    })
   });
   
   const gate = await capGate.json();
@@ -596,7 +672,8 @@ All MCP tools hit **https://cap-alpha-one.vercel.app** by default.
 ## API Endpoints
 
 - \`POST /v1/mint_sandbox_key\` - Get sandbox credentials (no auth)
-- \`POST /v1/consume\` - Consume units (requires Bearer token)
+- \`POST /v1/consume\` - Consume units (requires Bearer token, idempotencyKey required)
+- \`POST /v1/set_limit\` - Set user's daily limit (requires Bearer token)
 - \`POST /v1/why_denied\` - Check balance details (requires Bearer token)
 
 ## What Cap Is NOT
@@ -610,15 +687,20 @@ Cap is a gate, not a billing system:
 
 For billing, use Stripe. For spend caps, use Cap.
 
-## TypeScript SDK (Optional)
+## TypeScript SDK
 
-This repo includes an SDK client at \`src/sdk/index.ts\`. It is NOT published to npm. If you want type-safe calls, copy the SDK files into your project and construct with:
+Publishing as **@usecap/sdk** (intended for public host usecap.dev, currently at https://cap-alpha-one.vercel.app).
 
 \`\`\`typescript
+import { CapClient } from '@usecap/sdk';
+
 const cap = new CapClient({ 
   apiKey: 'cap_...',
   baseUrl: 'https://cap-alpha-one.vercel.app'
 });
+
+await cap.consume({ userId: 'user_123', units: 1, idempotencyKey: 'req_abc' });
+await cap.setLimit({ userId: 'user_123', dailyLimit: 50 });
 \`\`\`
 
 The fetch snippet above is simpler and requires no dependencies.
