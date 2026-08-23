@@ -1,5 +1,6 @@
--- Atomic consume function
+-- Atomic consume function with advisory lock
 -- This function ensures that two concurrent consume calls cannot both succeed for the last unit
+-- Uses pg_advisory_xact_lock to serialize consumption checks per (project_id, user_id)
 CREATE OR REPLACE FUNCTION consume_units(
   p_project_id UUID,
   p_user_id TEXT,
@@ -22,24 +23,41 @@ DECLARE
   v_reason TEXT;
   v_remaining INTEGER;
   v_today_start TIMESTAMPTZ;
+  v_lock_key BIGINT;
 BEGIN
-  -- Check if idempotency key already exists
-  IF EXISTS (
-    SELECT 1 FROM consume_events 
-    WHERE project_id = p_project_id 
-    AND idempotency_key = p_idempotency_key
-  ) THEN
-    -- Return cached result
-    SELECT 
-      consume_events.ok,
-      consume_events.reason,
-      consume_events.remaining::INTEGER
-    INTO v_ok, v_reason, v_remaining
-    FROM consume_events
-    WHERE project_id = p_project_id 
-    AND idempotency_key = p_idempotency_key
-    LIMIT 1;
-    
+  -- Check if idempotency key already exists (before taking lock for performance)
+  SELECT 
+    consume_events.ok,
+    consume_events.reason,
+    consume_events.remaining::INTEGER
+  INTO v_ok, v_reason, v_remaining
+  FROM consume_events
+  WHERE project_id = p_project_id 
+  AND idempotency_key = p_idempotency_key
+  LIMIT 1;
+  
+  IF FOUND THEN
+    RETURN QUERY SELECT v_ok, v_reason, v_remaining;
+    RETURN;
+  END IF;
+
+  -- Take advisory lock on (project_id, user_id) to serialize consumption checks
+  -- This prevents two concurrent transactions from both seeing remaining=1
+  v_lock_key := hashtext(p_project_id::text || ':' || p_user_id);
+  PERFORM pg_advisory_xact_lock(v_lock_key);
+
+  -- Double-check idempotency after acquiring lock (handles race on same key)
+  SELECT 
+    consume_events.ok,
+    consume_events.reason,
+    consume_events.remaining::INTEGER
+  INTO v_ok, v_reason, v_remaining
+  FROM consume_events
+  WHERE project_id = p_project_id 
+  AND idempotency_key = p_idempotency_key
+  LIMIT 1;
+  
+  IF FOUND THEN
     RETURN QUERY SELECT v_ok, v_reason, v_remaining;
     RETURN;
   END IF;
@@ -47,7 +65,7 @@ BEGIN
   -- Get today's start (UTC midnight)
   v_today_start := date_trunc('day', NOW() AT TIME ZONE 'UTC');
 
-  -- Get user's limits and usage atomically
+  -- Get user's limits and usage
   SELECT 
     COALESCE(eu.daily_limit, p.default_daily_limit),
     COALESCE(eu.extra_balance, 0)
@@ -71,24 +89,39 @@ BEGIN
   v_reason := CASE WHEN v_ok THEN NULL ELSE 'insufficient_balance' END;
   v_remaining := CASE WHEN v_ok THEN v_available - p_units ELSE v_available END;
 
-  -- Insert the event atomically
-  INSERT INTO consume_events (
-    project_id,
-    user_id,
-    units,
-    idempotency_key,
-    ok,
-    reason,
-    remaining
-  ) VALUES (
-    p_project_id,
-    p_user_id,
-    p_units,
-    p_idempotency_key,
-    v_ok,
-    v_reason,
-    v_remaining
-  );
+  -- Insert the event
+  BEGIN
+    INSERT INTO consume_events (
+      project_id,
+      user_id,
+      units,
+      idempotency_key,
+      ok,
+      reason,
+      remaining
+    ) VALUES (
+      p_project_id,
+      p_user_id,
+      p_units,
+      p_idempotency_key,
+      v_ok,
+      v_reason,
+      v_remaining
+    );
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- Another transaction with same idempotency key won the race
+      -- Return the existing result
+      SELECT 
+        consume_events.ok,
+        consume_events.reason,
+        consume_events.remaining::INTEGER
+      INTO v_ok, v_reason, v_remaining
+      FROM consume_events
+      WHERE project_id = p_project_id 
+      AND idempotency_key = p_idempotency_key
+      LIMIT 1;
+  END;
 
   RETURN QUERY SELECT v_ok, v_reason, v_remaining;
 END;
