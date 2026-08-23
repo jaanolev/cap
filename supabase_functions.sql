@@ -23,7 +23,6 @@ DECLARE
   v_reason TEXT;
   v_remaining INTEGER;
   v_today_start TIMESTAMPTZ;
-  v_lock_key BIGINT;
 BEGIN
   -- Check if idempotency key already exists (before taking lock for performance)
   SELECT 
@@ -43,8 +42,7 @@ BEGIN
 
   -- Take advisory lock on (project_id, user_id) to serialize consumption checks
   -- This prevents two concurrent transactions from both seeing remaining=1
-  v_lock_key := hashtext(p_project_id::text || ':' || p_user_id);
-  PERFORM pg_advisory_xact_lock(v_lock_key);
+  PERFORM pg_advisory_xact_lock(hashtext(p_project_id::text), hashtext(p_user_id));
 
   -- Double-check idempotency after acquiring lock (handles race on same key)
   SELECT 

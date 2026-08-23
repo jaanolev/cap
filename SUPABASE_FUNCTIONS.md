@@ -20,8 +20,7 @@ Atomic consumption function with advisory locking.
 Before reading consumption data, the function takes a transaction-scoped advisory lock:
 
 ```sql
-v_lock_key := hashtext(p_project_id::text || ':' || p_user_id);
-PERFORM pg_advisory_xact_lock(v_lock_key);
+PERFORM pg_advisory_xact_lock(hashtext(p_project_id::text), hashtext(p_user_id));
 ```
 
 This ensures:
